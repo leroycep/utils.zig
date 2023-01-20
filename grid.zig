@@ -137,6 +137,20 @@ pub fn Grid(comptime T: type) type {
             }
         }
 
+        pub fn add(this: @This(), other: ConstGrid(T)) void {
+            std.debug.assert(other.size[0] >= this.size[0]);
+            std.debug.assert(other.size[1] >= this.size[1]);
+
+            var row_index: usize = 0;
+            while (row_index < this.size[1]) : (row_index += 1) {
+                const this_row = this.data[row_index * this.stride ..][0..this.size[0]];
+                const other_row = other.data[row_index * other.stride ..][0..other.size[0]];
+                for (this_row) |*value, index| {
+                    value.* += other_row[index];
+                }
+            }
+        }
+
         pub fn getRow(this: @This(), row: usize) []T {
             std.debug.assert(row < this.size[1]);
             return this.data[row * this.stride ..][0..this.size[0]];
