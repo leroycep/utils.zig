@@ -151,6 +151,32 @@ pub fn Grid(comptime T: type) type {
             }
         }
 
+        pub fn divScalar(this: @This(), scalar: T) void {
+            var slice_iter = this.iterateSlices();
+            while (slice_iter.next()) |slice| {
+                for (slice) |*value| {
+                    value.* /= scalar;
+                }
+            }
+        }
+
+        test divScalar {
+            var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
+            defer grid.free(std.testing.allocator);
+
+            for (grid.data) |*elem, index| {
+                elem.* = @intToFloat(f32, index);
+            }
+
+            grid.divScalar(10);
+
+            try std.testing.expectEqualSlices(
+                f32,
+                &.{ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 },
+                grid.data,
+            );
+        }
+
         pub fn getRow(this: @This(), row: usize) []T {
             std.debug.assert(row < this.size[1]);
             return this.data[row * this.stride ..][0..this.size[0]];
@@ -173,6 +199,34 @@ pub fn Grid(comptime T: type) type {
                 .grid = this,
                 .row = 0,
             };
+        }
+
+        pub const SliceIterator = struct {
+            grid: Grid(T),
+
+            pub fn next(this: *@This()) ?[]T {
+                // TODO: when n-dimensional grids are implemented, handle multiple strides
+                if (this.grid.size[1] <= 0) return null;
+                if (this.grid.size[0] == this.grid.stride) {
+                    // Return all data as a single slice
+                    const slice = this.grid.data[0 .. this.grid.size[0] * this.grid.size[1]];
+                    this.grid.size[1] = 0;
+                    return slice;
+                } else {
+                    const slice = this.grid.data[0..this.grid.size[0]];
+                    // Move grid down one row
+                    this.grid.data = this.grid.data[this.grid.stride..];
+                    this.grid.size[1] -= 1;
+                    return slice;
+                }
+            }
+        };
+
+        /// Iterate over each slice. This is similar to `iterateRows`, except it will attempt
+        /// to return the fewest slices possible. This is especially effective in cases where
+        /// the stride and the width are equal; in which case it will return only one slice.
+        pub fn iterateSlices(this: @This()) SliceIterator {
+            return SliceIterator{ .grid = this };
         }
     };
 }
@@ -279,4 +333,35 @@ pub fn ConstGrid(comptime T: type) type {
             };
         }
     };
+}
+
+test "iterateSlices returns 1 slice for a contiguous grid" {
+    var contiguous_grid = try Grid(f32).alloc(std.testing.allocator, .{ 32, 32 });
+    defer contiguous_grid.free(std.testing.allocator);
+
+    const expected_len = contiguous_grid.size[0] * contiguous_grid.size[1];
+
+    var iter = contiguous_grid.iterateSlices();
+    const slice = iter.next() orelse return error.UnexpectedNull;
+
+    try std.testing.expectEqual(@as(?[]f32, null), iter.next());
+    try std.testing.expectEqual(expected_len, slice.len);
+}
+
+test "iterateSlices returns multiple slices for a split grid" {
+    var split_grid = try Grid(f32).allocWithRowAlign(std.testing.allocator, .{ 32, 32 }, 64);
+    defer split_grid.free(std.testing.allocator);
+
+    const expected_total_len = split_grid.size[0] * split_grid.size[1];
+    var total_len: usize = 0;
+    var number_of_slices: usize = 0;
+
+    var iter = split_grid.iterateSlices();
+    while (iter.next()) |slice| {
+        total_len += slice.len;
+        number_of_slices += 1;
+    }
+
+    try std.testing.expect(number_of_slices > 1);
+    try std.testing.expectEqual(expected_total_len, total_len);
 }
