@@ -174,23 +174,6 @@ pub fn Grid(comptime T: type) type {
             }
         }
 
-        test divScalar {
-            var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
-            defer grid.free(std.testing.allocator);
-
-            for (grid.data) |*elem, index| {
-                elem.* = @intToFloat(f32, index);
-            }
-
-            grid.divScalar(10);
-
-            try std.testing.expectEqualSlices(
-                f32,
-                &.{ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 },
-                grid.data,
-            );
-        }
-
         pub fn getRow(this: @This(), row: usize) []T {
             std.debug.assert(row < this.size[1]);
             return this.data[row * this.stride ..][0..this.size[0]];
@@ -347,6 +330,23 @@ pub fn ConstGrid(comptime T: type) type {
             };
         }
     };
+}
+
+test "Grid(f32).divScalar" {
+    var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
+    defer grid.free(std.testing.allocator);
+
+    for (grid.data) |*elem, index| {
+        elem.* = @intToFloat(f32, index);
+    }
+
+    grid.divScalar(10);
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 },
+        grid.data,
+    );
 }
 
 test "iterateSlices returns 1 slice for a contiguous grid" {
