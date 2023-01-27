@@ -165,6 +165,29 @@ pub fn Grid(comptime T: type) type {
             }
         }
 
+        pub fn mul(this: @This(), other: ConstGrid(T)) void {
+            std.debug.assert(other.size[0] >= this.size[0]);
+            std.debug.assert(other.size[1] >= this.size[1]);
+
+            var row_index: usize = 0;
+            while (row_index < this.size[1]) : (row_index += 1) {
+                const this_row = this.data[row_index * this.stride ..][0..this.size[0]];
+                const other_row = other.data[row_index * other.stride ..][0..other.size[0]];
+                for (this_row) |*value, index| {
+                    value.* *= other_row[index];
+                }
+            }
+        }
+
+        pub fn mulScalar(this: @This(), scalar: T) void {
+            var slice_iter = this.iterateSlices();
+            while (slice_iter.next()) |slice| {
+                for (slice) |*value| {
+                    value.* *= scalar;
+                }
+            }
+        }
+
         pub fn divScalar(this: @This(), scalar: T) void {
             var slice_iter = this.iterateSlices();
             while (slice_iter.next()) |slice| {
@@ -330,6 +353,48 @@ pub fn ConstGrid(comptime T: type) type {
             };
         }
     };
+}
+
+test "Grid(f32).mul" {
+    var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
+    defer grid.free(std.testing.allocator);
+
+    for (grid.data) |*elem, index| {
+        elem.* = @intToFloat(f32, index);
+    }
+
+    grid.mul(.{
+        .data = &.{
+            1,  1,  2,
+            3,  5,  8,
+            14, 22, 36,
+        },
+        .size = .{ 3, 3 },
+        .stride = 3,
+    });
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0, 1, 4, 9, 20, 40, 84, 154, 288 },
+        grid.data,
+    );
+}
+
+test "Grid(f32).mulScalar" {
+    var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
+    defer grid.free(std.testing.allocator);
+
+    for (grid.data) |*elem, index| {
+        elem.* = @intToFloat(f32, index);
+    }
+
+    grid.mulScalar(10);
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 0.0, 10, 20, 30, 40, 50, 60, 70, 80 },
+        grid.data,
+    );
 }
 
 test "Grid(f32).divScalar" {
