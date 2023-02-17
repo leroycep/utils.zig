@@ -92,9 +92,17 @@ pub fn Grid(comptime T: type) type {
             std.debug.assert(@reduce(.And, posv < this.size));
             std.debug.assert(@reduce(.And, posv + sizev <= this.size));
 
+            const min_index = posv[1] * this.stride + posv[0];
+            if (@reduce(.Or, sizev == @splat(2, @as(usize, 0)))) {
+                return .{
+                    .data = this.data[min_index..min_index],
+                    .stride = this.stride,
+                    .size = sizev,
+                };
+            }
+
             const max_pos = posv + sizev - @Vector(2, usize){ 1, 1 };
 
-            const min_index = posv[1] * this.stride + posv[0];
             const end_index = max_pos[1] * this.stride + max_pos[0] + 1;
 
             std.debug.assert(end_index - min_index >= size[0] * size[1]);
