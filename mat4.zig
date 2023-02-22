@@ -24,6 +24,15 @@ pub fn translate(comptime T: type, translation: [3]T) [4][4]T {
     };
 }
 
+pub fn scale(comptime T: type, scaling: [3]T) [4][4]T {
+    return .{
+        .{ scaling[0], 0, 0, 0 },
+        .{ 0, scaling[1], 0, 0 },
+        .{ 0, 0, scaling[2], 0 },
+        .{ 0, 0, 0, 1 },
+    };
+}
+
 pub fn rotateZ(comptime T: type, turns: T) [4][4]T {
     return .{
         .{ @cos(turns * std.math.tau), @sin(turns * std.math.tau), 0, 0 },
