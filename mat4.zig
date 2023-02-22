@@ -7,8 +7,30 @@ pub fn identity(comptime T: type) [4][4]T {
     };
 }
 
+pub fn mulVec(comptime T: type, a: [4][4]T, b: [4]T) [4]T {
+    return mat.mul(4, 4, 1, T, a, .{b})[0];
+}
+
 pub fn mul(comptime T: type, a: [4][4]T, b: [4][4]T) [4][4]T {
     return mat.mul(4, 4, 4, T, a, b);
+}
+
+pub fn translate(comptime T: type, translation: [3]T) [4][4]T {
+    return .{
+        .{ 1, 0, 0, 0 },
+        .{ 0, 1, 0, 0 },
+        .{ 0, 0, 1, 0 },
+        translation ++ .{1},
+    };
+}
+
+pub fn rotateZ(comptime T: type, turns: T) [4][4]T {
+    return .{
+        .{ @cos(turns * std.math.tau), @sin(turns * std.math.tau), 0, 0 },
+        .{ -@sin(turns * std.math.tau), @cos(turns * std.math.tau), 0, 0 },
+        .{ 0, 0, 1, 0 },
+        .{ 0, 0, 0, 1 },
+    };
 }
 
 pub fn orthographic(comptime T: type, left: T, right: T, bottom: T, top: T, near: T, far: T) [4][4]T {
@@ -68,3 +90,14 @@ pub fn lookAt(comptime T: type, eye: @Vector(3, T), target: @Vector(3, T), up: @
 const std = @import("std");
 const vec = @import("./vec.zig");
 const mat = @import("./mat.zig");
+
+test translate {
+    try std.testing.expectEqualDeep(
+        [4]f32{ 7, 9, 11, 1 },
+        mulVec(
+            f32,
+            translate(f32, .{ 2, 3, 4 }),
+            .{ 5, 6, 7, 1 },
+        ),
+    );
+}
