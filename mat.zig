@@ -3,8 +3,8 @@
 pub fn mul(comptime M: usize, comptime N: usize, comptime P: usize, comptime T: type, a: [N][M]T, b: [P][N]T) [P][M]T {
     var res: [P][M]T = undefined;
 
-    for (res) |*column, i| {
-        for (column) |*c, j| {
+    for (&res, 0..) |*column, i| {
+        for (column, 0..) |*c, j| {
             var va: @Vector(N, T) = undefined;
             comptime var k: usize = 0;
             inline while (k < N) : (k += 1) {

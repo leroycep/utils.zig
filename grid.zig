@@ -139,7 +139,7 @@ pub fn Grid(comptime T: type) type {
             while (row_index < this.size[1]) : (row_index += 1) {
                 const this_row = this.data[row_index * this.stride ..][0..this.size[0]];
                 const other_row = other.data[row_index * other.stride ..][0..other.size[0]];
-                for (this_row) |*value, index| {
+                for (this_row, 0..) |*value, index| {
                     value.* +|= other_row[index];
                 }
             }
@@ -153,7 +153,7 @@ pub fn Grid(comptime T: type) type {
             while (row_index < this.size[1]) : (row_index += 1) {
                 const this_row = this.data[row_index * this.stride ..][0..this.size[0]];
                 const other_row = other.data[row_index * other.stride ..][0..other.size[0]];
-                for (this_row) |*value, index| {
+                for (this_row, 0..) |*value, index| {
                     value.* += other_row[index];
                 }
             }
@@ -167,7 +167,7 @@ pub fn Grid(comptime T: type) type {
             while (row_index < this.size[1]) : (row_index += 1) {
                 const this_row = this.data[row_index * this.stride ..][0..this.size[0]];
                 const other_row = other.data[row_index * other.stride ..][0..other.size[0]];
-                for (this_row) |*value, index| {
+                for (this_row, 0..) |*value, index| {
                     value.* -= other_row[index];
                 }
             }
@@ -181,7 +181,7 @@ pub fn Grid(comptime T: type) type {
             while (row_index < this.size[1]) : (row_index += 1) {
                 const this_row = this.data[row_index * this.stride ..][0..this.size[0]];
                 const other_row = other.data[row_index * other.stride ..][0..other.size[0]];
-                for (this_row) |*value, index| {
+                for (this_row, 0..) |*value, index| {
                     value.* *= other_row[index];
                 }
             }
@@ -204,7 +204,7 @@ pub fn Grid(comptime T: type) type {
             while (row_index < this.size[1]) : (row_index += 1) {
                 const this_row = this.data[row_index * this.stride ..][0..this.size[0]];
                 const other_row = other.data[row_index * other.stride ..][0..other.size[0]];
-                for (this_row) |*value, index| {
+                for (this_row, 0..) |*value, index| {
                     value.* /= other_row[index];
                 }
             }
@@ -390,7 +390,7 @@ test "Grid(f32).mul" {
     var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
     defer grid.free(std.testing.allocator);
 
-    for (grid.data) |*elem, index| {
+    for (grid.data, 0..) |*elem, index| {
         elem.* = @intToFloat(f32, index);
     }
 
@@ -415,7 +415,7 @@ test "Grid(f32).mulScalar" {
     var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
     defer grid.free(std.testing.allocator);
 
-    for (grid.data) |*elem, index| {
+    for (grid.data, 0..) |*elem, index| {
         elem.* = @intToFloat(f32, index);
     }
 
@@ -432,7 +432,7 @@ test "Grid(f32).div" {
     var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
     defer grid.free(std.testing.allocator);
 
-    for (grid.data) |*elem, index| {
+    for (grid.data, 0..) |*elem, index| {
         elem.* = @intToFloat(f32, index);
     }
 
@@ -457,7 +457,7 @@ test "Grid(f32).divScalar" {
     var grid = try Grid(f32).alloc(std.testing.allocator, .{ 3, 3 });
     defer grid.free(std.testing.allocator);
 
-    for (grid.data) |*elem, index| {
+    for (grid.data, 0..) |*elem, index| {
         elem.* = @intToFloat(f32, index);
     }
 
