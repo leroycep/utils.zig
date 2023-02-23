@@ -242,12 +242,10 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             }
         }
 
-        pub fn sqrt(this: @This()) void {
-            var slice_iter = this.iterateSlices();
-            while (slice_iter.next()) |slice| {
-                for (slice) |*value| {
-                    value.* /= @sqrt(value.*);
-                }
+        pub fn sqrt(dest: @This(), a: ConstGrid(D, T)) void {
+            var iter = dest.iterate();
+            while (iter.next()) |e| {
+                e.ptr.* = @sqrt(a.getPos(e.pos));
             }
         }
 
@@ -477,6 +475,26 @@ test "Grid(f32).divScalar" {
     try std.testing.expectEqualSlices(
         f32,
         &.{ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 },
+        grid.getSliceOfData(),
+    );
+}
+
+test "Grid(1, f32).sqrt" {
+    var grid = try Grid(2, f32).alloc(std.testing.allocator, .{ 2, 2 });
+    defer grid.free(std.testing.allocator);
+
+    grid.sqrt(.{
+        .data = &[_]f32{
+            4,  9,
+            16, 25,
+        },
+        .size = .{ 2, 2 },
+        .stride = .{2},
+    });
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 2, 3, 4, 5 },
         grid.getSliceOfData(),
     );
 }
