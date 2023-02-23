@@ -294,36 +294,44 @@ pub fn ConstGrid(comptime D: usize, comptime T: type) type {
             allocator.free(this.data[0 .. this.stride[D - 2] * this.size[D - 1]]);
         }
 
-        pub fn getPos(this: @This(), pos: [D]usize) T {
-            std.debug.assert(pos[0] < this.size[0] and pos[1] < this.size[1]);
-            const index = posToIndex(D, this.stride, pos);
-            return this.data[index];
+        pub fn getPosPtr(this: @This(), pos: [D]usize) *const T {
+            const posv = @as(@Vector(D, usize), pos);
+            std.debug.assert(@reduce(.And, posv < this.size));
+
+            return &this.data[posToIndex(D, this.stride, pos)];
         }
 
-        pub fn getRegion(this: @This(), pos: [2]usize, size: [2]usize) @This() {
-            const posv: @Vector(2, usize) = pos;
-            const sizev: @Vector(2, usize) = size;
+        pub fn getPos(this: @This(), pos: [D]usize) T {
+            const posv = @as(@Vector(D, usize), pos);
+            std.debug.assert(@reduce(.And, posv < this.size));
 
-            std.debug.assert(@reduce(.And, posv <= this.size));
+            return this.data[posToIndex(D, this.stride, pos)];
+        }
+
+        pub fn getRegion(this: @This(), pos: [D]usize, size: [D]usize) @This() {
+            const posv: @Vector(D, usize) = pos;
+            const sizev: @Vector(D, usize) = size;
+
+            std.debug.assert(@reduce(.And, posv < this.size));
             std.debug.assert(@reduce(.And, posv + sizev <= this.size));
 
-            const min_index = posv[1] * this.stride + posv[0];
-            if (@reduce(.Or, sizev == @splat(2, @as(usize, 0)))) {
+            const min_index = posToIndex(D, this.stride, pos);
+            if (@reduce(.Or, sizev == @splat(D, @as(usize, 0)))) {
                 return .{
-                    .data = this.data[min_index..min_index],
+                    .data = this.data[min_index..min_index].ptr,
                     .stride = this.stride,
                     .size = sizev,
                 };
             }
 
-            const max_pos = posv + sizev - @Vector(2, usize){ 1, 1 };
+            const max_pos = posv + sizev - @splat(D, @as(usize, 1));
 
-            const end_index = max_pos[1] * this.stride + max_pos[0] + 1;
+            const end_index = posToIndex(D, this.stride, max_pos);
 
-            std.debug.assert(end_index - min_index >= size[0] * size[1]);
+            std.debug.assert(end_index - min_index + 1 >= @reduce(.Mul, sizev));
 
             return @This(){
-                .data = this.data[min_index..end_index],
+                .data = this.data[min_index..end_index].ptr,
                 .stride = this.stride,
                 .size = size,
             };
@@ -353,26 +361,39 @@ pub fn ConstGrid(comptime D: usize, comptime T: type) type {
             };
         }
 
-        pub const ElementIterator = struct {
-            grid: ConstGrid(T),
-            pos: [2]usize,
+        pub const Iterator = struct {
+            grid: ConstGrid(D, T),
+            pos: [D]usize,
 
-            pub fn next(this: *@This()) ?T {
-                if (this.pos[0] >= this.grid.size[0]) {
-                    this.pos[0] = 0;
-                    this.pos[1] += 1;
+            pub const Entry = struct {
+                pos: [D]usize,
+                ptr: *const T,
+            };
+
+            pub fn next(this: *@This()) ?Entry {
+                for (this.pos[0 .. D - 1], this.pos[1..D], this.grid.size[0 .. D - 1]) |*pos, *next_pos, size| {
+                    if (pos.* >= size) {
+                        pos.* = 0;
+                        next_pos.* += 1;
+                    }
                 }
-                if (this.pos[1] >= this.grid.size[1]) return null;
-                const value = this.grid.getPos(this.pos);
+                if (this.pos[D - 1] >= this.grid.size[D - 1]) {
+                    return null;
+                }
+                const entry = Entry{
+                    .pos = this.pos,
+                    .ptr = this.grid.getPosPtr(this.pos),
+                };
                 this.pos[0] += 1;
-                return value;
+                return entry;
             }
         };
 
-        pub fn iterateElements(this: @This()) ElementIterator {
-            return ElementIterator{
+        // TODO: Add test
+        pub fn iterate(this: @This()) Iterator {
+            return Iterator{
                 .grid = this,
-                .pos = .{ 0, 0 },
+                .pos = [_]usize{0} ** D,
             };
         }
     };
