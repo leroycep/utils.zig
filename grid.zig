@@ -57,22 +57,9 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             };
         }
 
-        pub fn dupe(allocator: std.mem.Allocator, src: ConstGrid(T)) !@This() {
-            var len: usize = 1;
-            for (src.size) |s| {
-                len *= s;
-            }
-
-            const data = try allocator.alloc(T, src.size[0] * src.size[1]);
-            errdefer allocator.free(data);
-
-            var this = @This(){
-                .data = data,
-                .stride = src.size[0],
-                .size = src.size,
-            };
+        pub fn dupe(allocator: std.mem.Allocator, src: ConstGrid(D, T)) !@This() {
+            var this = try alloc(allocator, src.size);
             this.copy(src);
-
             return this;
         }
 
@@ -536,4 +523,22 @@ test "Grid(3, f32).set" {
     while (iter.next()) |e| {
         try std.testing.expectEqual(@as(f32, 42), e.ptr.*);
     }
+}
+
+test "Grid(3, f32).dupe" {
+    var grid = try Grid(2, f32).dupe(std.testing.allocator, ConstGrid(2, f32){
+        .data = &[_]f32{
+            2, 3,
+            4, 5,
+        },
+        .size = .{ 2, 2 },
+        .stride = .{2},
+    });
+    defer grid.free(std.testing.allocator);
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 2, 3, 4, 5 },
+        grid.getSliceOfData(),
+    );
 }
