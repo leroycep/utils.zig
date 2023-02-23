@@ -88,15 +88,12 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             };
         }
 
-        pub fn copy(dest: @This(), src: ConstGrid(T)) void {
-            std.debug.assert(src.size[0] >= dest.size[0]);
-            std.debug.assert(src.size[1] >= dest.size[1]);
+        pub fn copy(dest: @This(), src: ConstGrid(D, T)) void {
+            std.debug.assert(std.mem.eql(usize, &dest.size, &src.size));
 
-            var row_index: usize = 0;
-            while (row_index < dest.size[1]) : (row_index += 1) {
-                const dest_row = dest.data[row_index * dest.stride ..][0..dest.size[0]];
-                const src_row = src.data[row_index * src.stride ..][0..src.size[0]];
-                std.mem.copy(T, dest_row, src_row);
+            var iter = dest.iterate();
+            while (iter.next()) |e| {
+                e.ptr.* = src.getPos(e.pos);
             }
         }
 
@@ -123,30 +120,30 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             return this.asConst().getPos(pos);
         }
 
-        pub fn getRegion(this: @This(), pos: [2]usize, size: [2]usize) @This() {
-            const posv: @Vector(2, usize) = pos;
-            const sizev: @Vector(2, usize) = size;
+        pub fn getRegion(this: @This(), pos: [D]usize, size: [D]usize) @This() {
+            const posv: @Vector(D, usize) = pos;
+            const sizev: @Vector(D, usize) = size;
 
             std.debug.assert(@reduce(.And, posv < this.size));
             std.debug.assert(@reduce(.And, posv + sizev <= this.size));
 
-            const min_index = posv[1] * this.stride + posv[0];
-            if (@reduce(.Or, sizev == @splat(2, @as(usize, 0)))) {
+            const min_index = posToIndex(D, this.stride, pos);
+            if (@reduce(.Or, sizev == @splat(D, @as(usize, 0)))) {
                 return .{
-                    .data = this.data[min_index..min_index],
+                    .data = this.data[min_index..min_index].ptr,
                     .stride = this.stride,
                     .size = sizev,
                 };
             }
 
-            const max_pos = posv + sizev - @Vector(2, usize){ 1, 1 };
+            const max_pos = posv + sizev - @splat(D, @as(usize, 1));
 
-            const end_index = max_pos[1] * this.stride + max_pos[0] + 1;
+            const end_index = posToIndex(D, this.stride, max_pos);
 
-            std.debug.assert(end_index - min_index >= size[0] * size[1]);
+            std.debug.assert(end_index - min_index + 1 >= @reduce(.Mul, sizev));
 
             return @This(){
-                .data = this.data[min_index..end_index],
+                .data = this.data[min_index..end_index].ptr,
                 .stride = this.stride,
                 .size = size,
             };
@@ -247,6 +244,14 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             while (iter.next()) |e| {
                 e.ptr.* = @sqrt(a.getPos(e.pos));
             }
+        }
+
+        pub fn withExtraDimensions(this: @This(), comptime EXTRA_DIMS: usize) Grid(D + EXTRA_DIMS, T) {
+            return Grid(D + EXTRA_DIMS, T){
+                .data = this.data,
+                .stride = this.stride ++ [_]usize{undefined} ** EXTRA_DIMS,
+                .size = this.size ++ [_]usize{1} ** EXTRA_DIMS,
+            };
         }
 
         pub const Iterator = struct {
@@ -351,22 +356,11 @@ pub fn ConstGrid(comptime D: usize, comptime T: type) type {
             return true;
         }
 
-        pub const RowIterator = struct {
-            grid: ConstGrid(T),
-            row: usize,
-
-            pub fn next(this: *@This()) ?[]const T {
-                if (this.row >= this.grid.size[1]) return null;
-                const value = this.grid.data[this.row * this.grid.stride ..][0..this.grid.size[0]];
-                this.row += 1;
-                return value;
-            }
-        };
-
-        pub fn iterateRows(this: @This()) RowIterator {
-            return RowIterator{
-                .grid = this,
-                .row = 0,
+        pub fn withExtraDimensions(this: @This(), comptime EXTRA_DIMS: usize) ConstGrid(D + EXTRA_DIMS, T) {
+            return ConstGrid(D + EXTRA_DIMS, T){
+                .data = this.data,
+                .stride = this.stride ++ [_]usize{undefined} ** EXTRA_DIMS,
+                .size = this.size ++ [_]usize{1} ** EXTRA_DIMS,
             };
         }
 
@@ -495,6 +489,37 @@ test "Grid(1, f32).sqrt" {
     try std.testing.expectEqualSlices(
         f32,
         &.{ 2, 3, 4, 5 },
+        grid.getSliceOfData(),
+    );
+}
+
+test "Grid with extra dimensions" {
+    var grid = try Grid(3, f32).alloc(std.testing.allocator, .{ 2, 2, 2 });
+    defer grid.free(std.testing.allocator);
+
+    const layer1 = ConstGrid(2, f32){
+        .data = &[_]f32{
+            2, 3,
+            4, 5,
+        },
+        .size = .{ 2, 2 },
+        .stride = .{2},
+    };
+    const layer2 = ConstGrid(2, f32){
+        .data = &[_]f32{
+            4,  9,
+            16, 25,
+        },
+        .size = .{ 2, 2 },
+        .stride = .{2},
+    };
+
+    grid.getRegion(.{ 0, 0, 0 }, .{ 2, 2, 1 }).copy(layer1.withExtraDimensions(1));
+    grid.getRegion(.{ 0, 0, 1 }, .{ 2, 2, 1 }).copy(layer2.withExtraDimensions(1));
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 2, 3, 4, 5, 4, 9, 16, 25 },
         grid.getSliceOfData(),
     );
 }
