@@ -104,16 +104,18 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             }
         }
 
-        pub fn setPos(this: @This(), pos: [2]usize, value: T) void {
-            std.debug.assert(pos[0] < this.size[0] and pos[1] < this.size[1]);
-            std.debug.assert(this.stride >= this.size[0]);
-            const index = posToIndex(D, this.stride, pos);
-            this.data[index] = value;
+        pub fn setPos(this: @This(), pos: [D]usize, value: T) void {
+            const posv = @as(@Vector(D, usize), pos);
+            std.debug.assert(@reduce(.And, posv < this.size));
+
+            this.data[posToIndex(D, this.stride, pos)] = value;
         }
 
         pub fn getPosPtr(this: @This(), pos: [D]usize) *T {
-            const index = posToIndex(D, this.stride, pos);
-            return &this.data[index];
+            const posv = @as(@Vector(D, usize), pos);
+            std.debug.assert(@reduce(.And, posv < this.size));
+
+            return &this.data[posToIndex(D, this.stride, pos)];
         }
 
         pub fn getPos(this: @This(), pos: [D]usize) T {
