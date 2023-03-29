@@ -7,8 +7,7 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const optimize = b.standardOptimizeOption(.{});
 
-    b.addModule(.{
-        .name = "utils.zig",
+    _ = b.addModule("utils.zig", .{
         .source_file = .{ .path = "utils.zig" },
     });
 
