@@ -5,7 +5,12 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(gpa.allocator());
     defer std.process.argsFree(gpa.allocator(), args);
 
-    const Method = enum { iterator, for_slice, add_function, for_slice_vector };
+    const Method = enum {
+        iterator,
+        for_slice,
+        function,
+        for_slice_vector,
+    };
     const method = std.meta.stringToEnum(Method, args[1]) orelse return error.UnknownMethod;
     const size = [2]usize{
         try std.fmt.parseInt(usize, args[2], 10),
@@ -50,7 +55,7 @@ pub fn main() !void {
                 res.* = a + b;
             }
         },
-        .add_function => result.add(grids[0].asConst(), grids[1].asConst()),
+        .function => result.add(grids[0].asConst(), grids[1].asConst()),
         .for_slice_vector => {
             const S = comptime std.simd.suggestVectorSize(f32) orelse 4;
 

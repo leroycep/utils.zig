@@ -158,9 +158,14 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = a.getPos(e.pos) + b.getPos(e.pos);
+            for (0..dest.size[1]) |row| {
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
+                    rv.* = ra + rb;
+                }
             }
         }
 
@@ -168,9 +173,14 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = a.getPos(e.pos) +| b.getPos(e.pos);
+            for (0..dest.size[1]) |row| {
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
+                    rv.* = ra +| rb;
+                }
             }
         }
 
@@ -178,9 +188,14 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = a.getPos(e.pos) - b.getPos(e.pos);
+            for (0..dest.size[1]) |row| {
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
+                    rv.* = ra - rb;
+                }
             }
         }
 
@@ -188,9 +203,14 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = a.getPos(e.pos) -| b.getPos(e.pos);
+            for (0..dest.size[1]) |row| {
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
+                    rv.* = ra -| rb;
+                }
             }
         }
 
@@ -198,40 +218,62 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = a.getPos(e.pos) * b.getPos(e.pos);
+            for (0..dest.size[1]) |row| {
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
+                    rv.* = ra * rb;
+                }
             }
         }
 
         pub fn mulScalar(dest: @This(), src: ConstGrid(D, T), scalar: T) void {
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = src.getPos(e.pos) * scalar;
+            for (0..dest.size[1]) |row| {
+                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, src_slice) |*rd, rs| {
+                    rd.* = rs * scalar;
+                }
             }
         }
 
         pub fn div(dest: @This(), a: ConstGrid(D, T), b: ConstGrid(D, T)) void {
+            std.debug.assert(std.mem.eql(usize, &dest.size, &a.size));
             std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
-            std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = a.getPos(e.pos) / b.getPos(e.pos);
+            for (0..dest.size[1]) |row| {
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
+                    rv.* = ra / rb;
+                }
             }
         }
 
         pub fn divScalar(dest: @This(), src: ConstGrid(D, T), scalar: T) void {
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = src.getPos(e.pos) / scalar;
+            for (0..dest.size[1]) |row| {
+                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, src_slice) |*rd, rs| {
+                    rd.* = rs / scalar;
+                }
             }
         }
 
-        pub fn sqrt(dest: @This(), a: ConstGrid(D, T)) void {
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = @sqrt(a.getPos(e.pos));
+        pub fn sqrt(dest: @This(), src: ConstGrid(D, T)) void {
+            for (0..dest.size[1]) |row| {
+                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[1]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+
+                for (dest_slice, src_slice) |*rd, rs| {
+                    rd.* = @sqrt(rs);
+                }
             }
         }
 
