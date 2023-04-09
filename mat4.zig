@@ -20,7 +20,7 @@ pub fn mulAll(comptime T: type, matrices: []const [4][4]T) [4][4]T {
     var res: [4][4]T = matrices[matrices.len - 1];
 
     for (0..matrices.len - 1) |i| {
-        const inverse_i = (matrices.len - 1) - i;
+        const inverse_i = (matrices.len - 2) - i;
         const left_matrix = matrices[inverse_i];
         res = mul(T, left_matrix, res);
     }
