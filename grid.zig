@@ -109,6 +109,10 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             return this.asConst().getPos(pos);
         }
 
+        pub fn getRow(this: @This(), row: usize) []T {
+            return this.data[this.stride[0] * row .. this.stride[0] * row + this.size[0]];
+        }
+
         pub fn getRegion(this: @This(), pos: [D]usize, size: [D]usize) @This() {
             const posv: @Vector(D, usize) = pos;
             const sizev: @Vector(D, usize) = size;
