@@ -159,9 +159,9 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
             for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
                     rv.* = ra + rb;
@@ -174,9 +174,9 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
             for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
                     rv.* = ra +| rb;
@@ -189,9 +189,9 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
             for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
                     rv.* = ra - rb;
@@ -204,9 +204,9 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
             for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
                     rv.* = ra -| rb;
@@ -219,9 +219,9 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
             for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
                     rv.* = ra * rb;
@@ -231,8 +231,8 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
 
         pub fn mulScalar(dest: @This(), src: ConstGrid(D, T), scalar: T) void {
             for (0..dest.size[1]) |row| {
-                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, src_slice) |*rd, rs| {
                     rd.* = rs * scalar;
@@ -245,9 +245,9 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
 
             for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[1]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
+                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
                     rv.* = ra / rb;
@@ -257,8 +257,8 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
 
         pub fn divScalar(dest: @This(), src: ConstGrid(D, T), scalar: T) void {
             for (0..dest.size[1]) |row| {
-                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, src_slice) |*rd, rs| {
                     rd.* = rs / scalar;
@@ -268,8 +268,8 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
 
         pub fn sqrt(dest: @This(), src: ConstGrid(D, T)) void {
             for (0..dest.size[1]) |row| {
-                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[1]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[1]];
+                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[0]];
+                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
 
                 for (dest_slice, src_slice) |*rd, rs| {
                     rd.* = @sqrt(rs);
@@ -439,6 +439,39 @@ pub fn ConstGrid(comptime D: usize, comptime T: type) type {
             };
         }
     };
+}
+
+test "Grid(f32).add" {
+    var grid = try Grid(2, f32).alloc(std.testing.allocator, .{ 3, 2 });
+    defer grid.free(std.testing.allocator);
+
+    grid.add(
+        .{
+            .data = &[_]f32{
+                1, 2, 3,
+                4, 5, 6,
+            },
+            .size = .{ 3, 2 },
+            .stride = .{3},
+        },
+        .{
+            .data = &[_]f32{
+                1, 1, 2,
+                3, 5, 8,
+            },
+            .size = .{ 3, 2 },
+            .stride = .{3},
+        },
+    );
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{
+            2, 3,  5,
+            7, 10, 14,
+        },
+        grid.getSliceOfData(),
+    );
 }
 
 test "Grid(f32).mul" {
