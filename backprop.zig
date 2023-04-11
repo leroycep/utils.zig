@@ -32,6 +32,23 @@ pub fn sigmoid(x: f32) f32 {
     return 1.0 / (1.0 + @exp(-x));
 }
 
+pub fn tanh(x: f32) f32 {
+    return (@exp(2.0 * x) - 1.0) / (@exp(2.0 * x) + 1.0);
+}
+
+pub fn tanh_gradient(x: f32) f32 {
+    return ((@exp(2.0 * x) - 1.0) * (@exp(2.0 * x) - 1.0)) / ((@exp(2.0 * x) + 1.0) * (@exp(2.0 * x) + 1.0));
+}
+
+test tanh_gradient {
+    var default_prng = std.rand.DefaultPrng.init(8564095);
+    const prng = default_prng.random();
+    for (0..5000) |_| {
+        const value = prng.floatNorm(f32);
+        try std.testing.expectApproxEqRel(tanh_gradient(value), tanh(value) * tanh(value), 0.00001);
+    }
+}
+
 test "train neural network on xor function" {
     // set up random number generator with fixed seed
     var default_prng = std.rand.DefaultPrng.init(8564095);
@@ -39,16 +56,16 @@ test "train neural network on xor function" {
 
     // training data
     const inputs = &[_][2]f32{
-        .{ 0, 0 },
-        .{ 0, 1 },
-        .{ 1, 0 },
+        .{ -1, -1 },
+        .{ -1, 1 },
+        .{ 1, -1 },
         .{ 1, 1 },
     };
     const expected_outputs = &[_][1]f32{
-        .{0},
+        .{-1},
         .{1},
         .{1},
-        .{0},
+        .{-1},
     };
 
     // initialize weights
@@ -57,19 +74,18 @@ test "train neural network on xor function" {
 
     for (&middle_weights) |*neuron_weights| {
         for (neuron_weights) |*w| {
-            w.* = prng.float(f32);
+            w.* = prng.floatNorm(f32);
         }
     }
     for (&output_weights) |*neuron_weights| {
         for (neuron_weights) |*w| {
-            w.* = prng.float(f32);
+            w.* = prng.floatNorm(f32);
         }
     }
 
     // train
     const iterations = 1_000_000;
     for (0..iterations) |iteration| {
-        _ = iteration;
         const temperature = 0.01;
 
         var total_loss: f32 = 0;
@@ -80,7 +96,7 @@ test "train neural network on xor function" {
                 for (input, weights) |x, w| {
                     sum += x * w;
                 }
-                out.* = sigmoid(sum);
+                out.* = tanh(sum);
             }
 
             var output: [1]f32 = undefined;
@@ -89,7 +105,7 @@ test "train neural network on xor function" {
                 for (middle, weights) |x, w| {
                     sum += x * w;
                 }
-                out.* = sigmoid(sum);
+                out.* = tanh(sum);
             }
 
             total_loss += (output[0] - expected_output[0]) * (output[0] - expected_output[0]);
@@ -102,11 +118,11 @@ test "train neural network on xor function" {
             for (&output_weights, output, &output_input_gradients, &output_weight_gradients) |weights, y, *input_gradients, *weight_gradients| {
                 std.mem.set(f32, input_gradients, 0);
                 std.mem.set(f32, weight_gradients, 0);
-                // sigmoid gradient = sigmoid * (1 - sigmoid), and our neuron's output is sigmoid(sum(x * w))
-                const sigmoid_gradient = y * (1 - y) * output0_gradient;
+                // tanh gradient = 1 - tanh ^ 2, and our neuron's output is tanh
+                const activation_gradient = (1.0 - y * y) * output0_gradient;
                 for (input_gradients, weight_gradients, middle, weights) |*xg, *wg, x, w| {
-                    xg.* += w * sigmoid_gradient;
-                    wg.* += x * sigmoid_gradient;
+                    xg.* += w * activation_gradient;
+                    wg.* += x * activation_gradient;
                 }
             }
 
@@ -122,11 +138,11 @@ test "train neural network on xor function" {
                     output_gradient += og[i];
                 }
 
-                // sigmoid gradient = sigmoid * (1 - sigmoid), and our neuron's output is sigmoid(sum(x * w))
-                const sigmoid_gradient = y * (1 - y) * output_gradient;
+                // tanh gradient = 1 - tanh ^ 2, and our neuron's output is tanh
+                const activation_gradient = (1.0 - y * y) * output_gradient;
                 for (input_gradients, weight_gradients, input, weights) |*xg, *wg, x, w| {
-                    xg.* += w * sigmoid_gradient;
-                    wg.* += x * sigmoid_gradient;
+                    xg.* += w * activation_gradient;
+                    wg.* += x * activation_gradient;
                 }
             }
 
@@ -142,6 +158,9 @@ test "train neural network on xor function" {
                 }
             }
         }
+        if (iteration % (iterations / 15) == 0) {
+            std.debug.print("iteration {} loss = {}\n", .{ iteration, total_loss });
+        }
     }
 
     // test that the network has learned xor
@@ -152,7 +171,7 @@ test "train neural network on xor function" {
             for (input, weights) |x, w| {
                 sum += x * w;
             }
-            out.* = sigmoid(sum);
+            out.* = tanh(sum);
         }
 
         var output: [1]f32 = undefined;
@@ -161,7 +180,7 @@ test "train neural network on xor function" {
             for (middle, weights) |x, w| {
                 sum += x * w;
             }
-            out.* = sigmoid(sum);
+            out.* = tanh(sum);
         }
 
         try std.testing.expectApproxEqAbs(expected_output[0], output[0], 0.1);
@@ -177,8 +196,6 @@ test "train neural network on xor function" {
 //     mul,
 //     div,
 // };
-
-pub fn compute_gradients() void {}
 
 const Grid = @import("./grid.zig").ConstGrid;
 const ConstGrid = @import("./grid.zig").ConstGrid;
