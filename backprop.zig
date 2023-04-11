@@ -1,30 +1,61 @@
-test "simple neural network forward pass" {
-    const input = &[_]f32{ 1, 2, 3 };
-    const middle_weights = [2][3]f32{
-        .{ 0.5, 0.4, 0.3 },
-        .{ -0.5, -0.4, -0.3 },
-    };
-    const output_weights = [2]f32{ 0.2, -0.2 };
-
-    var middle: [2]f32 = undefined;
-    for (&middle, middle_weights) |*out, weights| {
-        var sum: f32 = 0;
-        for (input, weights) |x, w| {
+pub fn layer_forward_sigmoid(inputs: []const f32, weights: ConstGrid(2, f32), biases: []const f32, outputs: []f32) void {
+    for (outputs, 0..weights.size[1], biases) |*out, row_index, bias| {
+        var sum: f32 = bias;
+        for (inputs, weights.getRow(row_index)) |x, w| {
             sum += x * w;
         }
         out.* = sigmoid(sum);
     }
+}
+
+pub fn layer_forward_tanh(inputs: []const f32, weights: ConstGrid(2, f32), biases: []const f32, outputs: []f32) void {
+    for (outputs, 0..weights.size[1], biases) |*out, row_index, bias| {
+        var sum: f32 = bias;
+        for (inputs, weights.getRow(row_index)) |x, w| {
+            sum += x * w;
+        }
+        out.* = tanh(sum);
+    }
+}
+
+pub fn layer_backward_tanh(inputs: []const f32, weights: ConstGrid(2, f32), outputs: []const f32, output_gradients: []const f32, input_gradients: []f32, weight_gradients: Grid(2, f32), bias_gradients: []f32) void {
+    std.mem.set(f32, input_gradients, 0);
+    weight_gradients.set(0);
+    std.mem.set(f32, bias_gradients, 0);
+    for (outputs, output_gradients, 0..weights.size[1], bias_gradients) |out, out_gradient, row_index, *bias_gradient| {
+        // tanh gradient = 1 - tanh ^ 2, and our neuron's output is tanh
+        const activation_gradient = (1.0 - out * out) * out_gradient;
+        bias_gradient.* += activation_gradient;
+        for (input_gradients, weight_gradients.getRow(row_index), inputs, weights.getRow(row_index)) |*xg, *wg, x, w| {
+            xg.* += w * activation_gradient;
+            wg.* += x * activation_gradient;
+        }
+    }
+}
+
+test "simple neural network forward pass" {
+    const input = [_]f32{ 1, 2, 3 };
+    const middle_weights = ConstGrid(2, f32){
+        .data = &[_]f32{
+            0.5,  0.4,  0.3,
+            -0.5, -0.4, -0.3,
+        },
+        .size = .{ 3, 2 },
+        .stride = .{3},
+    };
+    const output_weights = ConstGrid(2, f32){
+        .data = &[_]f32{ 0.2, -0.2 },
+        .size = .{ 2, 1 },
+        .stride = .{2},
+    };
+
+    var middle: [2]f32 = undefined;
+    layer_forward_sigmoid(&input, middle_weights, &.{ 0, 0 }, &middle);
 
     try std.testing.expectEqualSlices(f32, &.{ 9.00249540e-01, 9.97504815e-02 }, &middle);
 
     var output: [1]f32 = undefined;
-    for (&output) |*out| {
-        var sum: f32 = 0;
-        for (middle, output_weights) |x, w| {
-            sum += x * w;
-        }
-        out.* = sigmoid(sum);
-    }
+    layer_forward_sigmoid(&middle, output_weights, &.{0}, &output);
     try std.testing.expectEqualSlices(f32, &.{5.39939641e-01}, &output);
 }
 
@@ -69,18 +100,28 @@ test "train neural network on xor function" {
     };
 
     // initialize weights
-    var middle_weights: [2][2]f32 = undefined;
-    var output_weights: [1][2]f32 = undefined;
+    var middle_weights = try Grid(2, f32).alloc(std.testing.allocator, .{ 2, 2 });
+    defer middle_weights.free(std.testing.allocator);
+    var middle_biases: [2]f32 = undefined;
+    var output_weights = try Grid(2, f32).alloc(std.testing.allocator, .{ 2, 1 });
+    defer output_weights.free(std.testing.allocator);
+    var output_biases: [1]f32 = undefined;
 
-    for (&middle_weights) |*neuron_weights| {
-        for (neuron_weights) |*w| {
+    for (0..middle_weights.size[1]) |neuron_index| {
+        for (middle_weights.getRow(neuron_index)) |*w| {
             w.* = prng.floatNorm(f32);
         }
     }
-    for (&output_weights) |*neuron_weights| {
-        for (neuron_weights) |*w| {
+    for (&middle_biases) |*b| {
+        b.* = prng.floatNorm(f32);
+    }
+    for (0..output_weights.size[1]) |neuron_index| {
+        for (output_weights.getRow(neuron_index)) |*w| {
             w.* = prng.floatNorm(f32);
         }
+    }
+    for (&output_biases) |*b| {
+        b.* = prng.floatNorm(f32);
     }
 
     // train
@@ -91,71 +132,65 @@ test "train neural network on xor function" {
         var total_loss: f32 = 0;
         for (inputs, expected_outputs) |input, expected_output| {
             var middle: [2]f32 = undefined;
-            for (&middle, middle_weights) |*out, weights| {
-                var sum: f32 = 0;
-                for (input, weights) |x, w| {
-                    sum += x * w;
-                }
-                out.* = tanh(sum);
-            }
+            layer_forward_tanh(&input, middle_weights.asConst(), &middle_biases, &middle);
 
             var output: [1]f32 = undefined;
-            for (&output, &output_weights) |*out, weights| {
-                var sum: f32 = 0;
-                for (middle, weights) |x, w| {
-                    sum += x * w;
-                }
-                out.* = tanh(sum);
-            }
+            layer_forward_tanh(&middle, output_weights.asConst(), &output_biases, &output);
 
             total_loss += (output[0] - expected_output[0]) * (output[0] - expected_output[0]);
 
-            const loss_gradient = 2.0;
-            const output0_gradient = loss_gradient * (output[0] - expected_output[0]);
-
-            var output_input_gradients: [1][2]f32 = undefined;
+            var middle_gradients: [2]f32 = undefined;
             var output_weight_gradients: [1][2]f32 = undefined;
-            for (&output_weights, output, &output_input_gradients, &output_weight_gradients) |weights, y, *input_gradients, *weight_gradients| {
-                std.mem.set(f32, input_gradients, 0);
-                std.mem.set(f32, weight_gradients, 0);
-                // tanh gradient = 1 - tanh ^ 2, and our neuron's output is tanh
-                const activation_gradient = (1.0 - y * y) * output0_gradient;
-                for (input_gradients, weight_gradients, middle, weights) |*xg, *wg, x, w| {
-                    xg.* += w * activation_gradient;
-                    wg.* += x * activation_gradient;
-                }
-            }
+            const output_weight_gradients_grid = Grid(2, f32){
+                .data = &output_weight_gradients[0],
+                .size = .{ 2, 1 },
+                .stride = .{2},
+            };
+            var output_bias_gradients: [1]f32 = undefined;
+            layer_backward_tanh(
+                &middle,
+                output_weights.asConst(),
+                &output,
+                &.{2.0 * (output[0] - expected_output[0])},
+                &middle_gradients,
+                output_weight_gradients_grid,
+                &output_bias_gradients,
+            );
 
-            var middle_input_gradients: [2][2]f32 = undefined;
+            var input_gradients: [2]f32 = undefined;
             var middle_weight_gradients: [2][2]f32 = undefined;
-            for (&middle_weights, middle, &middle_input_gradients, &middle_weight_gradients, 0..) |weights, y, *input_gradients, *weight_gradients, i| {
-                std.mem.set(f32, input_gradients, 0);
-                std.mem.set(f32, weight_gradients, 0);
-
-                // Get the total gradient for each of the outputs that relies on this neuron
-                var output_gradient: f32 = 0;
-                for (output_input_gradients) |og| {
-                    output_gradient += og[i];
-                }
-
-                // tanh gradient = 1 - tanh ^ 2, and our neuron's output is tanh
-                const activation_gradient = (1.0 - y * y) * output_gradient;
-                for (input_gradients, weight_gradients, input, weights) |*xg, *wg, x, w| {
-                    xg.* += w * activation_gradient;
-                    wg.* += x * activation_gradient;
-                }
-            }
+            const middle_weight_gradients_grid = Grid(2, f32){
+                .data = &middle_weight_gradients[0],
+                .size = .{ 2, 2 },
+                .stride = .{2},
+            };
+            var middle_bias_gradients: [2]f32 = undefined;
+            layer_backward_tanh(
+                &input,
+                middle_weights.asConst(),
+                &middle,
+                &middle_gradients,
+                &input_gradients,
+                middle_weight_gradients_grid,
+                &middle_bias_gradients,
+            );
 
             // gradient descent by moving neural networks parameters in the direction of less loss/error
-            for (&middle_weights, middle_weight_gradients) |*layer_weights, layer_gradients| {
-                for (layer_weights, &layer_gradients) |*weight, gradient| {
+            for (0..middle_weights.size[1]) |neuron_index| {
+                for (middle_weights.getRow(neuron_index), middle_weight_gradients_grid.getRow(neuron_index)) |*weight, gradient| {
                     weight.* -= gradient * temperature;
                 }
             }
-            for (&output_weights, output_weight_gradients) |*layer_weights, layer_gradients| {
-                for (layer_weights, &layer_gradients) |*weight, gradient| {
+            for (&middle_biases, &middle_bias_gradients) |*bias, gradient| {
+                bias.* -= gradient * temperature;
+            }
+            for (0..output_weights.size[1]) |neuron_index| {
+                for (output_weights.getRow(neuron_index), output_weight_gradients_grid.getRow(neuron_index)) |*weight, gradient| {
                     weight.* -= gradient * temperature;
                 }
+            }
+            for (&output_biases, &output_bias_gradients) |*bias, gradient| {
+                bias.* -= gradient * temperature;
             }
         }
         if (iteration % (iterations / 15) == 0) {
@@ -166,37 +201,15 @@ test "train neural network on xor function" {
     // test that the network has learned xor
     for (inputs, expected_outputs) |input, expected_output| {
         var middle: [2]f32 = undefined;
-        for (&middle, middle_weights) |*out, weights| {
-            var sum: f32 = 0;
-            for (input, weights) |x, w| {
-                sum += x * w;
-            }
-            out.* = tanh(sum);
-        }
+        layer_forward_tanh(&input, middle_weights.asConst(), &middle_biases, &middle);
 
         var output: [1]f32 = undefined;
-        for (&output, &output_weights) |*out, weights| {
-            var sum: f32 = 0;
-            for (middle, weights) |x, w| {
-                sum += x * w;
-            }
-            out.* = tanh(sum);
-        }
+        layer_forward_tanh(&middle, output_weights.asConst(), &output_biases, &output);
 
         try std.testing.expectApproxEqAbs(expected_output[0], output[0], 0.1);
     }
 }
 
-// pub const Operation = union(enum) {
-//     add: struct {
-//         input: [2]ConstGrid(N, T),
-//         output: Grid(N, T),
-//     },
-//     sub,
-//     mul,
-//     div,
-// };
-
-const Grid = @import("./grid.zig").ConstGrid;
+const Grid = @import("./grid.zig").Grid;
 const ConstGrid = @import("./grid.zig").ConstGrid;
 const std = @import("std");
