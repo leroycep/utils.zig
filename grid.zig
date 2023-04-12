@@ -281,6 +281,21 @@ pub fn Grid(comptime D: usize, comptime T: type) type {
             }
         }
 
+        pub fn matrixMul(this: Grid(2, T), ag: ConstGrid(2, T), bg: ConstGrid(2, T)) void {
+            std.debug.assert(this.size[0] == ag.size[0]);
+            std.debug.assert(this.size[1] == bg.size[1]);
+
+            for (0..this.size[1]) |i| {
+                for (this.getRow(i), 0..) |*c, j| {
+                    c.* = 0;
+                    for (bg.getRow(i), 0..) |b, k| {
+                        const a = ag.getPos(.{ j, k });
+                        c.* += a * b;
+                    }
+                }
+            }
+        }
+
         pub fn withExtraDimensions(this: @This(), comptime EXTRA_DIMS: usize) Grid(D + EXTRA_DIMS, T) {
             return Grid(D + EXTRA_DIMS, T){
                 .data = this.data,
@@ -645,4 +660,34 @@ test "Grid(3, f32).dupe" {
         &.{ 2, 3, 4, 5 },
         grid.getSliceOfData(),
     );
+}
+
+test "Grid(2, f32).matrixMul" {
+    const a = ConstGrid(2, f32){
+        .data = &[_]f32{
+            1, 4,
+            2, 5,
+            3, 6,
+        },
+        .size = .{ 2, 3 },
+        .stride = .{2},
+    };
+    const b = ConstGrid(2, f32){
+        .data = &[_]f32{
+            7, 9,  11,
+            8, 10, 12,
+        },
+        .size = .{ 3, 2 },
+        .stride = .{3},
+    };
+
+    var c = try Grid(2, f32).alloc(std.testing.allocator, .{ 2, 2 });
+    defer c.free(std.testing.allocator);
+
+    c.matrixMul(a, b);
+
+    try std.testing.expectEqualSlices(f32, &[_]f32{
+        58, 139,
+        64, 154,
+    }, c.data[0..4]);
 }
