@@ -1,366 +1,179 @@
-const std = @import("std");
+const grid = @This();
 
-pub fn posToIndex(comptime D: usize, strides: [D - 1]usize, pos: [D]usize) usize {
+pub fn posToIndex(comptime D: usize, strides: [D]usize, pos: [D]usize) usize {
     var index: usize = 0;
-    for (pos, [_]usize{1} ++ strides) |p, stride| {
+    for (pos, strides) |p, stride| {
         index += p * stride;
     }
     return index;
 }
 
-pub fn Grid(comptime D: usize, comptime T: type) type {
+pub fn Buffer(comptime D: usize, comptime T: type) type {
+    return BufferAligned(D, @alignOf(T), T);
+}
+
+pub fn BufferAligned(comptime D: usize, comptime A: usize, comptime T: type) type {
     return struct {
-        data: [*]T,
+        data: [*]align(A) T,
         size: [D]usize,
-        stride: [D - 1]usize,
 
-        pub fn alloc(allocator: std.mem.Allocator, size: [D]usize) !@This() {
+        pub fn slice(this: @This()) []align(A) T {
             var len: usize = 1;
-            for (size) |s| {
-                len *= s;
-            }
-            const data = try allocator.alloc(T, len);
 
-            var strides: [D]usize = undefined;
-            strides[0] = 1;
-            for (strides[1..], strides[0 .. D - 1], size[0 .. D - 1]) |*stride, prev_stride, s| {
-                stride.* = prev_stride * s;
+            for (this.size) |size| {
+                len *= size;
             }
-            return @This(){
-                .data = data.ptr,
-                .stride = strides[1..].*,
-                .size = size,
+
+            return this.data[0..len];
+        }
+
+        pub fn asSlice(this: @This()) SliceAligned(D, A, T) {
+            var strides: [D]usize = undefined;
+            var len: usize = 1;
+            for (&strides, this.size) |*stride, size| {
+                stride.* = len;
+                len *= size;
+            }
+            return Slice(D, T){
+                .data = this.data,
+                .stride = strides,
+                .size = this.size,
             };
         }
 
-        pub fn allocWithRowAlign(allocator: std.mem.Allocator, size: [D]usize, row_align: [D - 1]usize) !@This() {
-            var size_aligned: [D - 1]usize = undefined;
-            for (&size_aligned, size[0 .. D - 1], row_align) |*sa, s, r| {
-                sa.* = std.mem.alignForward(s, r);
-            }
-
-            var len: usize = 1;
-            for (size_aligned) |s| {
-                len *= s;
-            }
-            const data = try allocator.alloc(T, len);
-
+        pub fn asConstSlice(this: @This()) ConstSliceAligned(D, A, T) {
             var strides: [D]usize = undefined;
-            strides[0] = 1;
-            for (strides[1..], strides[0 .. D - 1], size_aligned[0 .. D - 1]) |*stride, prev_stride, s| {
-                stride.* = prev_stride * s;
+            var len: usize = A;
+            for (&strides, this.size) |*stride, size| {
+                stride.* = len;
+                len *= size;
             }
-            return @This(){
-                .data = data.ptr,
-                .stride = strides[1..].*,
-                .size = size,
+            return ConstSlice(D, T){
+                .data = this.data,
+                .stride = strides,
+                .size = this.size,
             };
         }
 
-        pub fn dupe(allocator: std.mem.Allocator, src: ConstGrid(D, T)) !@This() {
-            var this = try alloc(allocator, src.size);
-            this.copy(src);
-            return this;
+        pub fn idx(this: @This(), pos: [D]usize) *align(A) T {
+            const posv = @as(@Vector(D, usize), pos);
+            std.debug.assert(@reduce(.And, posv < this.size));
+
+            var strides: [D]usize = undefined;
+            var len: usize = 1;
+            for (&strides, this.size) |*stride, size| {
+                stride.* = len;
+                len *= size;
+            }
+
+            return &this.data[posToIndex(D, strides, pos)];
         }
 
-        pub fn free(this: *@This(), allocator: std.mem.Allocator) void {
-            allocator.free(this.getSliceOfData());
+        pub fn region(this: @This(), start: [D]usize, end: [D]usize) Slice(D, A, T) {
+            const startv: @Vector(D, usize) = start;
+            const endv: @Vector(D, usize) = end;
+
+            std.debug.assert(@reduce(.And, startv < this.size));
+            std.debug.assert(@reduce(.And, startv <= endv));
+            std.debug.assert(@reduce(.And, endv <= this.size));
+
+            const sizev: @Vector(D, usize) = endv - startv;
+
+            var strides: [D]usize = undefined;
+            var len: usize = 1;
+            for (&strides, this.size) |*stride, size| {
+                stride.* = len;
+                len *= size;
+            }
+
+            const start_index = posToIndex(D, strides, start);
+            const end_index = posToIndex(D, strides, end);
+
+            return Slice(D, T){
+                .data = this.data[start_index..end_index].ptr,
+                .stride = this.stride,
+                .size = sizev,
+            };
         }
 
-        pub fn asConst(this: @This()) ConstGrid(D, T) {
-            return ConstGrid(D, T){
+        pub fn add(dest: @This(), a: @This(), b: @This()) void {
+            std.debug.assert(std.mem.eql(usize, &dest.size, &a.size));
+            std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
+
+            for (dest.slice(), a.slice(), b.slice()) |*z, x, y| {
+                z.* = x + y;
+            }
+        }
+
+        pub fn div(dest: @This(), a: @This(), b: @This()) void {
+            std.debug.assert(std.mem.eql(usize, &dest.size, &a.size));
+            std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
+
+            for (dest.slice(), a.slice(), b.slice()) |*z, x, y| {
+                z.* = x / y;
+            }
+        }
+    };
+}
+
+pub fn Slice(comptime D: usize, comptime T: type) type {
+    return SliceAligned(D, @alignOf(T), T);
+}
+
+pub fn SliceAligned(comptime D: usize, comptime A: usize, comptime T: type) type {
+    return struct {
+        data: [*]align(A) T,
+        stride: [D]usize,
+        size: [D]usize,
+
+        pub fn asConstSlice(this: @This()) ConstSlice(D, T) {
+            return ConstSlice(D, T){
                 .data = this.data,
                 .stride = this.stride,
                 .size = this.size,
             };
         }
 
-        pub fn copy(dest: @This(), src: ConstGrid(D, T)) void {
-            std.debug.assert(std.mem.eql(usize, &dest.size, &src.size));
-
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = src.getPos(e.pos);
-            }
-        }
-
-        pub fn set(dest: @This(), value: T) void {
-            var iter = dest.iterate();
-            while (iter.next()) |e| {
-                e.ptr.* = value;
-            }
-        }
-
-        pub fn setPos(this: @This(), pos: [D]usize, value: T) void {
-            const posv = @as(@Vector(D, usize), pos);
-            std.debug.assert(@reduce(.And, posv < this.size));
-
-            this.data[posToIndex(D, this.stride, pos)] = value;
-        }
-
-        pub fn getPosPtr(this: @This(), pos: [D]usize) *T {
+        pub fn idx(this: @This(), pos: [D]usize) *T {
             const posv = @as(@Vector(D, usize), pos);
             std.debug.assert(@reduce(.And, posv < this.size));
 
             return &this.data[posToIndex(D, this.stride, pos)];
         }
 
-        pub fn getPos(this: @This(), pos: [D]usize) T {
-            return this.asConst().getPos(pos);
-        }
+        pub fn region(this: @This(), start: [D]usize, end: [D]usize) @This() {
+            const startv: @Vector(D, usize) = start;
+            const endv: @Vector(D, usize) = end;
 
-        pub fn getRow(this: @This(), row: usize) []T {
-            return this.data[this.stride[0] * row .. this.stride[0] * row + this.size[0]];
-        }
+            std.debug.assert(@reduce(.And, startv < this.size));
+            std.debug.assert(@reduce(.And, startv <= endv));
+            std.debug.assert(@reduce(.And, endv <= this.size));
 
-        pub fn getRegion(this: @This(), pos: [D]usize, size: [D]usize) @This() {
-            const posv: @Vector(D, usize) = pos;
-            const sizev: @Vector(D, usize) = size;
+            const sizev: @Vector(D, usize) = endv - startv;
 
-            std.debug.assert(@reduce(.And, posv < this.size));
-            std.debug.assert(@reduce(.And, posv + sizev <= this.size));
-
-            const min_index = posToIndex(D, this.stride, pos);
-            if (@reduce(.Or, sizev == @splat(D, @as(usize, 0)))) {
-                return .{
-                    .data = this.data[min_index..min_index].ptr,
-                    .stride = this.stride,
-                    .size = sizev,
-                };
-            }
-
-            const max_pos = posv + sizev - @splat(D, @as(usize, 1));
-
-            const end_index = posToIndex(D, this.stride, max_pos);
-
-            std.debug.assert(end_index - min_index + 1 >= @reduce(.Mul, sizev));
+            const start_index = posToIndex(D, this.stride, start);
+            const end_index = posToIndex(D, this.stride, end);
 
             return @This(){
-                .data = this.data[min_index..end_index].ptr,
+                .data = this.data[start_index..end_index].ptr,
                 .stride = this.stride,
-                .size = size,
+                .size = sizev,
             };
-        }
-
-        pub fn flip(this: *@This(), flipOnAxis: [2]bool) void {
-            std.debug.assert(D == 2);
-            // The x/y coordinate where we can stop copying. We should only need to swap half the pixels.
-            const swap_to: [2]usize = if (flipOnAxis[1]) .{ this.size[0], this.size[1] / 2 } else if (flipOnAxis[0]) .{ this.size[0] / 2, this.size[1] } else return;
-
-            for (0..swap_to[1]) |y0| {
-                const y1 = if (flipOnAxis[1]) this.size[1] - 1 - y0 else y0;
-                const row0 = this.data[y0 * this.stride ..][0..this.size[0]];
-                const row1 = this.data[y1 * this.stride ..][0..this.size[0]];
-                for (0..swap_to[0]) |x0| {
-                    const x1 = if (flipOnAxis[0]) this.size[0] - 1 - x0 else x0;
-                    std.mem.swap(T, &row0[x0], &row1[x1]);
-                }
-            }
-        }
-
-        pub fn add(dest: @This(), a: ConstGrid(D, T), b: ConstGrid(D, T)) void {
-            std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
-            std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
-
-            for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
-                    rv.* = ra + rb;
-                }
-            }
-        }
-
-        pub fn addSaturating(dest: @This(), a: ConstGrid(D, T), b: ConstGrid(D, T)) void {
-            std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
-            std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
-
-            for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
-                    rv.* = ra +| rb;
-                }
-            }
-        }
-
-        pub fn sub(dest: @This(), a: ConstGrid(D, T), b: ConstGrid(D, T)) void {
-            std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
-            std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
-
-            for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
-                    rv.* = ra - rb;
-                }
-            }
-        }
-
-        pub fn subSaturating(dest: @This(), a: ConstGrid(D, T), b: ConstGrid(D, T)) void {
-            std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
-            std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
-
-            for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
-                    rv.* = ra -| rb;
-                }
-            }
-        }
-
-        pub fn mul(dest: @This(), a: ConstGrid(D, T), b: ConstGrid(D, T)) void {
-            std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
-            std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
-
-            for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
-                    rv.* = ra * rb;
-                }
-            }
-        }
-
-        pub fn mulScalar(dest: @This(), src: ConstGrid(D, T), scalar: T) void {
-            for (0..dest.size[1]) |row| {
-                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, src_slice) |*rd, rs| {
-                    rd.* = rs * scalar;
-                }
-            }
-        }
-
-        pub fn div(dest: @This(), a: ConstGrid(D, T), b: ConstGrid(D, T)) void {
-            std.debug.assert(std.mem.eql(usize, &dest.size, &a.size));
-            std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
-
-            for (0..dest.size[1]) |row| {
-                const a_slice = a.data[a.stride[0] * row .. a.stride[0] * row + a.size[0]];
-                const b_slice = b.data[b.stride[0] * row .. b.stride[0] * row + b.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, a_slice, b_slice) |*rv, ra, rb| {
-                    rv.* = ra / rb;
-                }
-            }
-        }
-
-        pub fn divScalar(dest: @This(), src: ConstGrid(D, T), scalar: T) void {
-            for (0..dest.size[1]) |row| {
-                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, src_slice) |*rd, rs| {
-                    rd.* = rs / scalar;
-                }
-            }
-        }
-
-        pub fn sqrt(dest: @This(), src: ConstGrid(D, T)) void {
-            for (0..dest.size[1]) |row| {
-                const src_slice = src.data[src.stride[0] * row .. src.stride[0] * row + src.size[0]];
-                const dest_slice = dest.data[dest.stride[0] * row .. dest.stride[0] * row + dest.size[0]];
-
-                for (dest_slice, src_slice) |*rd, rs| {
-                    rd.* = @sqrt(rs);
-                }
-            }
-        }
-
-        pub fn matrixMul(this: Grid(2, T), ag: ConstGrid(2, T), bg: ConstGrid(2, T)) void {
-            std.debug.assert(this.size[0] == ag.size[0]);
-            std.debug.assert(this.size[1] == bg.size[1]);
-
-            for (0..this.size[1]) |i| {
-                for (this.getRow(i), 0..) |*c, j| {
-                    c.* = 0;
-                    for (bg.getRow(i), 0..) |b, k| {
-                        const a = ag.getPos(.{ j, k });
-                        c.* += a * b;
-                    }
-                }
-            }
-        }
-
-        pub fn withExtraDimensions(this: @This(), comptime EXTRA_DIMS: usize) Grid(D + EXTRA_DIMS, T) {
-            return Grid(D + EXTRA_DIMS, T){
-                .data = this.data,
-                .stride = this.stride ++ [_]usize{undefined} ** EXTRA_DIMS,
-                .size = this.size ++ [_]usize{1} ** EXTRA_DIMS,
-            };
-        }
-
-        pub const Iterator = struct {
-            grid: Grid(D, T),
-            pos: [D]usize,
-
-            pub const Entry = struct {
-                pos: [D]usize,
-                ptr: *T,
-            };
-
-            pub fn next(this: *@This()) ?Entry {
-                for (this.pos[0 .. D - 1], this.pos[1..D], this.grid.size[0 .. D - 1]) |*pos, *next_pos, size| {
-                    if (pos.* >= size) {
-                        pos.* = 0;
-                        next_pos.* += 1;
-                    }
-                }
-                if (this.pos[D - 1] >= this.grid.size[D - 1]) {
-                    return null;
-                }
-                const entry = Entry{
-                    .pos = this.pos,
-                    .ptr = this.grid.getPosPtr(this.pos),
-                };
-                this.pos[0] += 1;
-                return entry;
-            }
-        };
-
-        pub fn iterate(this: @This()) Iterator {
-            return Iterator{
-                .grid = this,
-                .pos = [_]usize{0} ** D,
-            };
-        }
-
-        fn getSliceOfData(this: @This()) []T {
-            return this.data[0 .. this.stride[D - 2] * this.size[D - 1]];
         }
     };
 }
 
-pub fn ConstGrid(comptime D: usize, comptime T: type) type {
+pub fn ConstSlice(comptime D: usize, comptime T: type) type {
+    return ConstSliceAligned(D, @alignOf(T), T);
+}
+
+pub fn ConstSliceAligned(comptime D: usize, comptime A: usize, comptime T: type) type {
     return struct {
-        data: [*]const T,
-        stride: [D - 1]usize,
+        data: [*]align(A) const T,
+        stride: [D]usize,
         size: [D]usize,
 
-        pub fn free(this: *@This(), allocator: std.mem.Allocator) void {
-            allocator.free(this.data[0 .. this.stride[D - 2] * this.size[D - 1]]);
-        }
-
-        pub fn getPosPtr(this: @This(), pos: [D]usize) *const T {
-            const posv = @as(@Vector(D, usize), pos);
-            std.debug.assert(@reduce(.And, posv < this.size));
-
-            return &this.data[posToIndex(D, this.stride, pos)];
-        }
+        pub const Pos = [D]usize;
 
         pub fn getPos(this: @This(), pos: [D]usize) T {
             const posv = @as(@Vector(D, usize), pos);
@@ -369,123 +182,145 @@ pub fn ConstGrid(comptime D: usize, comptime T: type) type {
             return this.data[posToIndex(D, this.stride, pos)];
         }
 
-        pub fn getRow(this: @This(), row: usize) []const T {
-            return this.data[this.stride[0] * row .. this.stride[0] * row + this.size[0]];
+        pub fn idx(this: @This(), pos: [D]usize) *align(A) const T {
+            const posv = @as(@Vector(D, usize), pos);
+            std.debug.assert(@reduce(.And, posv < this.size));
+
+            return &this.data[posToIndex(D, this.stride, pos)];
         }
 
-        pub fn getRegion(this: @This(), pos: [D]usize, size: [D]usize) @This() {
-            const posv: @Vector(D, usize) = pos;
-            const sizev: @Vector(D, usize) = size;
+        pub fn region(this: @This(), start: [D]usize, end: [D]usize) @This() {
+            const startv: @Vector(D, usize) = start;
+            const endv: @Vector(D, usize) = end;
 
-            std.debug.assert(@reduce(.And, posv < this.size));
-            std.debug.assert(@reduce(.And, posv + sizev <= this.size));
+            std.debug.assert(@reduce(.And, startv < this.size));
+            std.debug.assert(@reduce(.And, startv <= endv));
+            std.debug.assert(@reduce(.And, endv <= this.size));
 
-            const min_index = posToIndex(D, this.stride, pos);
-            if (@reduce(.Or, sizev == @splat(D, @as(usize, 0)))) {
-                return .{
-                    .data = this.data[min_index..min_index].ptr,
-                    .stride = this.stride,
-                    .size = sizev,
-                };
-            }
+            const sizev: @Vector(D, usize) = endv - startv;
 
-            const max_pos = posv + sizev - @splat(D, @as(usize, 1));
-
-            const end_index = posToIndex(D, this.stride, max_pos);
-
-            std.debug.assert(end_index - min_index + 1 >= @reduce(.Mul, sizev));
+            const start_index = posToIndex(D, this.stride, start);
+            const end_index = posToIndex(D, this.stride, end);
 
             return @This(){
-                .data = this.data[min_index..end_index].ptr,
+                .data = this.data[start_index..end_index].ptr,
                 .stride = this.stride,
-                .size = size,
-            };
-        }
-
-        pub fn eql(a: @This(), b: @This()) bool {
-            if (!std.mem.eql(usize, &a.size, &b.size)) return false;
-
-            var map_iterator = a.iterateRows();
-            var piece_iterator = b.iterateRows();
-            var row_index: usize = 0;
-            while (row_index < a.size[1]) : (row_index += 1) {
-                const row_a = map_iterator.next().?;
-                const row_b = piece_iterator.next().?;
-
-                if (!std.mem.eql(T, row_a, row_b)) return false;
-            }
-
-            return true;
-        }
-
-        pub fn withExtraDimensions(this: @This(), comptime EXTRA_DIMS: usize) ConstGrid(D + EXTRA_DIMS, T) {
-            return ConstGrid(D + EXTRA_DIMS, T){
-                .data = this.data,
-                .stride = this.stride ++ [_]usize{undefined} ** EXTRA_DIMS,
-                .size = this.size ++ [_]usize{1} ** EXTRA_DIMS,
-            };
-        }
-
-        pub const Iterator = struct {
-            grid: ConstGrid(D, T),
-            pos: [D]usize,
-
-            pub const Entry = struct {
-                pos: [D]usize,
-                ptr: *const T,
-            };
-
-            pub fn next(this: *@This()) ?Entry {
-                for (this.pos[0 .. D - 1], this.pos[1..D], this.grid.size[0 .. D - 1]) |*pos, *next_pos, size| {
-                    if (pos.* >= size) {
-                        pos.* = 0;
-                        next_pos.* += 1;
-                    }
-                }
-                if (this.pos[D - 1] >= this.grid.size[D - 1]) {
-                    return null;
-                }
-                const entry = Entry{
-                    .pos = this.pos,
-                    .ptr = this.grid.getPosPtr(this.pos),
-                };
-                this.pos[0] += 1;
-                return entry;
-            }
-        };
-
-        // TODO: Add test
-        pub fn iterate(this: @This()) Iterator {
-            return Iterator{
-                .grid = this,
-                .pos = [_]usize{0} ** D,
+                .size = sizev,
             };
         }
     };
 }
 
-test "Grid(f32).add" {
-    var grid = try Grid(2, f32).alloc(std.testing.allocator, .{ 3, 2 });
-    defer grid.free(std.testing.allocator);
+pub fn alloc(comptime D: usize, comptime T: type, allocator: std.mem.Allocator, size: [D]usize) !Buffer(D, T) {
+    return allocAligned(D, @alignOf(T), T, allocator, size);
+}
 
-    grid.add(
-        .{
-            .data = &[_]f32{
-                1, 2, 3,
-                4, 5, 6,
-            },
-            .size = .{ 3, 2 },
-            .stride = .{3},
+pub fn allocAligned(comptime D: usize, comptime A: u29, comptime T: type, allocator: std.mem.Allocator, size: [D]usize) !BufferAligned(D, A, T) {
+    var len: usize = 1;
+    for (size) |s| {
+        len *= s;
+    }
+    const data = try allocator.allocWithOptions(T, len, A, null);
+
+    return .{
+        .data = data.ptr,
+        .size = size,
+    };
+}
+
+pub fn copy(comptime D: usize, comptime T: type, dest: Slice(D, T), src: ConstSlice(D, T)) void {
+    std.debug.assert(std.mem.eql(usize, &dest.size, &src.size));
+
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = src.idx(pos).*;
+    }
+}
+
+pub fn dupe(comptime D: usize, comptime T: type, allocator: std.mem.Allocator, src: ConstSlice(D, T)) !Buffer(D, T) {
+    var result = try alloc(D, T, allocator, src.size);
+    copy(D, T, result.asSlice(), src);
+    return result;
+}
+
+test dupe {
+    var result = try dupe(2, f32, std.testing.allocator, .{
+        .data = &[_]f32{
+            2, 3, 0,
+            4, 5, 0,
         },
-        .{
-            .data = &[_]f32{
-                1, 1, 2,
-                3, 5, 8,
-            },
-            .size = .{ 3, 2 },
-            .stride = .{3},
-        },
+        .size = .{ 2, 2 },
+        .stride = .{ 1, 3 },
+    });
+    defer std.testing.allocator.free(result.slice());
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{ 2, 3, 4, 5 },
+        result.slice(),
     );
+}
+
+pub fn set(comptime D: usize, comptime T: type, dest: Slice(D, T), value: T) void {
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = value;
+    }
+}
+
+test set {
+    var result = try alloc(3, f32, std.testing.allocator, .{ 3, 3, 3 });
+    defer std.testing.allocator.free(result.slice());
+
+    set(3, f32, result.asSlice(), 42);
+
+    try std.testing.expectEqualSlices(f32, &([_]f32{42} ** 27), result.data[0..27]);
+}
+
+pub fn flip(comptime T: type, dest: Slice(2, T), flipOnAxis: [2]bool) void {
+    // The x/y coordinate where we can stop copying. We should only need to swap half the pixels.
+    const swap_to: [2]usize = if (flipOnAxis[1]) .{ dest.size[0], dest.size[1] / 2 } else if (flipOnAxis[0]) .{ dest.size[0] / 2, dest.size[1] } else return;
+
+    for (0..swap_to[1]) |y0| {
+        const y1 = if (flipOnAxis[1]) dest.size[1] - 1 - y0 else y0;
+        const row0 = dest.data[y0 * dest.stride ..][0..dest.size[0]];
+        const row1 = dest.data[y1 * dest.stride ..][0..dest.size[0]];
+        for (0..swap_to[0]) |x0| {
+            const x1 = if (flipOnAxis[0]) dest.size[0] - 1 - x0 else x0;
+            std.mem.swap(T, &row0[x0], &row1[x1]);
+        }
+    }
+}
+
+pub fn add(comptime D: usize, comptime T: type, dest: Slice(D, T), a: ConstSlice(D, T), b: ConstSlice(D, T)) void {
+    std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
+    std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
+
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = a.idx(pos).* + b.idx(pos).*;
+    }
+}
+
+test add {
+    var result = try alloc(2, f32, std.testing.allocator, .{ 3, 2 });
+    defer std.testing.allocator.free(result.slice());
+
+    add(2, f32, result, .{
+        .data = &[_]f32{
+            1, 2, 3,
+            4, 5, 6,
+        },
+        .size = .{ 3, 2 },
+        .stride = .{ 1, 3 },
+    }, .{
+        .data = &[_]f32{
+            1, 1, 2,
+            3, 5, 8,
+        },
+        .size = .{ 3, 2 },
+        .stride = .{ 1, 3 },
+    });
 
     try std.testing.expectEqualSlices(
         f32,
@@ -493,201 +328,306 @@ test "Grid(f32).add" {
             2, 3,  5,
             7, 10, 14,
         },
-        grid.getSliceOfData(),
+        result.data[0..6],
     );
 }
 
-test "Grid(f32).mul" {
-    var grid = try Grid(2, f32).alloc(std.testing.allocator, .{ 3, 3 });
-    defer grid.free(std.testing.allocator);
+pub fn addSaturating(comptime D: usize, comptime T: type, dest: Slice(D, T), a: ConstSlice(D, T), b: ConstSlice(D, T)) void {
+    std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
+    std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
 
-    for (grid.data, 0..9) |*elem, index| {
-        elem.* = @intToFloat(f32, index);
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = a.idx(pos).* +| b.idx(pos).*;
     }
+}
 
-    grid.mul(grid.asConst(), .{
+pub fn sub(comptime D: usize, comptime T: type, dest: Slice(D, T), a: ConstSlice(D, T), b: ConstSlice(D, T)) void {
+    std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
+    std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
+
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = a.idx(pos).* - b.idx(pos).*;
+    }
+}
+
+pub fn subSaturating(comptime D: usize, comptime T: type, dest: Slice(D, T), a: ConstSlice(D, T), b: ConstSlice(D, T)) void {
+    std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
+    std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
+
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = a.idx(pos).* -| b.idx(pos).*;
+    }
+}
+
+pub fn mul(comptime D: usize, comptime T: type, dest: Slice(D, T), a: ConstSlice(D, T), b: ConstSlice(D, T)) void {
+    std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
+    std.debug.assert(std.mem.eql(usize, &a.size, &b.size));
+
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = a.idx(pos).* * b.idx(pos).*;
+    }
+}
+
+test add {
+    var result = try alloc(2, f32, std.testing.allocator, .{ 3, 2 });
+    defer std.testing.allocator.free(result.slice());
+
+    add(2, f32, result.asSlice(), .{
+        .data = &[_]f32{
+            1, 2, 3,
+            4, 5, 6,
+        },
+        .size = .{ 3, 2 },
+        .stride = .{ 1, 3 },
+    }, .{
+        .data = &[_]f32{
+            1, 1, 2,
+            3, 5, 8,
+        },
+        .size = .{ 3, 2 },
+        .stride = .{ 1, 3 },
+    });
+
+    try std.testing.expectEqualSlices(
+        f32,
+        &.{
+            2, 3,  5,
+            7, 10, 14,
+        },
+        result.data[0..6],
+    );
+}
+
+test mul {
+    var result = try alloc(2, f32, std.testing.allocator, .{ 3, 3 });
+    defer std.testing.allocator.free(result.slice());
+
+    mul(2, f32, result.asSlice(), .{
+        .data = &[_]f32{
+            0, 1, 2,
+            3, 4, 5,
+            6, 7, 8,
+        },
+        .size = .{ 3, 3 },
+        .stride = .{ 1, 3 },
+    }, .{
         .data = &[_]f32{
             1,  1,  2,
             3,  5,  8,
             14, 22, 36,
         },
         .size = .{ 3, 3 },
-        .stride = .{3},
+        .stride = .{ 1, 3 },
     });
 
     try std.testing.expectEqualSlices(
         f32,
         &.{ 0, 1, 4, 9, 20, 40, 84, 154, 288 },
-        grid.getSliceOfData(),
+        result.slice(),
     );
 }
 
-test "Grid(f32).mulScalar" {
-    var grid = try Grid(2, f32).alloc(std.testing.allocator, .{ 3, 3 });
-    defer grid.free(std.testing.allocator);
-
-    for (grid.data, 0..9) |*elem, index| {
-        elem.* = @intToFloat(f32, index);
+pub fn mulScalar(comptime D: usize, comptime T: type, dest: Slice(D, T), src: ConstSlice(D, T), scalar: T) void {
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = src.idx(pos).* * scalar;
     }
+}
 
-    grid.mulScalar(grid.asConst(), 10);
+test mulScalar {
+    var result = try alloc(2, f32, std.testing.allocator, .{ 3, 3 });
+    defer std.testing.allocator.free(result.slice());
+
+    mulScalar(2, f32, result.asSlice(), .{
+        .data = &[_]f32{
+            0, 1, 2,
+            3, 4, 5,
+            6, 7, 8,
+        },
+        .stride = .{ 1, 3 },
+        .size = .{ 3, 3 },
+    }, 10);
 
     try std.testing.expectEqualSlices(
         f32,
-        &.{ 0.0, 10, 20, 30, 40, 50, 60, 70, 80 },
-        grid.getSliceOfData(),
+        &[_]f32{ 0.0, 10, 20, 30, 40, 50, 60, 70, 80 },
+        result.slice(),
     );
 }
 
-test "Grid(f32).div" {
-    var grid = try Grid(2, f32).alloc(std.testing.allocator, .{ 3, 3 });
-    defer grid.free(std.testing.allocator);
+pub fn div(comptime D: usize, comptime T: type, dest: Slice(D, T), a: ConstSlice(D, T), b: ConstSlice(D, T)) void {
+    std.debug.assert(std.mem.eql(usize, &dest.size, &a.size));
+    std.debug.assert(std.mem.eql(usize, &dest.size, &b.size));
 
-    for (grid.data, 0..9) |*elem, index| {
-        elem.* = @intToFloat(f32, index);
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = a.idx(pos).* / b.idx(pos).*;
     }
+}
 
-    grid.div(grid.asConst(), .{
+test div {
+    var result = try alloc(2, f32, std.testing.allocator, .{ 3, 3 });
+    defer std.testing.allocator.free(result.slice());
+
+    div(2, f32, result.asSlice(), .{
+        .data = &[_]f32{
+            0, 1, 2,
+            3, 4, 5,
+            6, 7, 8,
+        },
+        .size = .{ 3, 3 },
+        .stride = .{ 1, 3 },
+    }, .{
         .data = &[_]f32{
             1,  1,  2,
             3,  5,  8,
             14, 22, 36,
         },
         .size = .{ 3, 3 },
-        .stride = .{3},
+        .stride = .{ 1, 3 },
     });
 
     try std.testing.expectEqualSlices(
         f32,
-        &.{ 0, 1, 1, 1, 0.8, 0.625, 0.42857142857142855, 0.3181818181818182, 0.2222222222222222 },
-        grid.getSliceOfData(),
+        &[_]f32{ 0, 1, 1, 1, 0.8, 0.625, 0.42857142857142855, 0.3181818181818182, 0.2222222222222222 },
+        result.slice(),
     );
 }
 
-test "Grid(f32).divScalar" {
-    var grid = try Grid(2, f32).alloc(std.testing.allocator, .{ 3, 3 });
-    defer grid.free(std.testing.allocator);
-
-    for (grid.data, 0..9) |*elem, index| {
-        elem.* = @intToFloat(f32, index);
+pub fn divScalar(comptime D: usize, comptime T: type, dest: Slice(D, T), src: ConstSlice(D, T), scalar: T) void {
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = src.idx(pos).* / scalar;
     }
+}
 
-    grid.divScalar(grid.asConst(), 10);
+test divScalar {
+    var result = try alloc(2, f32, std.testing.allocator, .{ 3, 3 });
+    defer std.testing.allocator.free(result.slice());
+
+    divScalar(2, f32, result.asSlice(), .{
+        .data = &[_]f32{
+            0, 1, 2,
+            3, 4, 5,
+            6, 7, 8,
+        },
+        .stride = .{ 1, 3 },
+        .size = .{ 3, 3 },
+    }, 10);
 
     try std.testing.expectEqualSlices(
         f32,
-        &.{ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 },
-        grid.getSliceOfData(),
+        &[_]f32{ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 },
+        result.slice(),
     );
 }
 
-test "Grid(1, f32).sqrt" {
-    var grid = try Grid(2, f32).alloc(std.testing.allocator, .{ 2, 2 });
-    defer grid.free(std.testing.allocator);
+pub fn sqrt(comptime D: usize, comptime T: type, dest: Slice(D, T), src: ConstSlice(D, T)) void {
+    var iter = iterateRange(D, dest.size);
+    while (iter.next()) |pos| {
+        dest.idx(pos).* = @sqrt(src.idx(pos).*);
+    }
+}
 
-    grid.sqrt(.{
+test sqrt {
+    var result = try alloc(2, f32, std.testing.allocator, .{ 2, 2 });
+    defer std.testing.allocator.free(result.slice());
+
+    sqrt(2, f32, result.asSlice(), .{
         .data = &[_]f32{
             4,  9,
             16, 25,
         },
         .size = .{ 2, 2 },
-        .stride = .{2},
+        .stride = .{ 1, 2 },
     });
 
     try std.testing.expectEqualSlices(
         f32,
         &.{ 2, 3, 4, 5 },
-        grid.getSliceOfData(),
+        result.data[0..4],
     );
 }
 
-test "Grid with extra dimensions" {
-    var grid = try Grid(3, f32).alloc(std.testing.allocator, .{ 2, 2, 2 });
-    defer grid.free(std.testing.allocator);
+pub fn matrixMul(comptime T: type, dest: Slice(2, T), a: ConstSlice(2, T), b: ConstSlice(2, T)) void {
+    std.debug.assert(dest.size[0] == b.size[0]);
+    std.debug.assert(a.size[1] == b.size[0]);
+    std.debug.assert(dest.size[1] == a.size[1]);
 
-    const layer1 = ConstGrid(2, f32){
-        .data = &[_]f32{
-            2, 3,
-            4, 5,
-        },
-        .size = .{ 2, 2 },
-        .stride = .{2},
-    };
-    const layer2 = ConstGrid(2, f32){
-        .data = &[_]f32{
-            4,  9,
-            16, 25,
-        },
-        .size = .{ 2, 2 },
-        .stride = .{2},
-    };
-
-    grid.getRegion(.{ 0, 0, 0 }, .{ 2, 2, 1 }).copy(layer1.withExtraDimensions(1));
-    grid.getRegion(.{ 0, 0, 1 }, .{ 2, 2, 1 }).copy(layer2.withExtraDimensions(1));
-
-    try std.testing.expectEqualSlices(
-        f32,
-        &.{ 2, 3, 4, 5, 4, 9, 16, 25 },
-        grid.getSliceOfData(),
-    );
-}
-
-test "Grid(3, f32).set" {
-    var grid = try Grid(3, f32).alloc(std.testing.allocator, .{ 3, 3, 3 });
-    defer grid.free(std.testing.allocator);
-
-    grid.set(42);
-
-    var iter = grid.iterate();
-    while (iter.next()) |e| {
-        try std.testing.expectEqual(@as(f32, 42), e.ptr.*);
+    for (0..dest.size[1]) |k| {
+        for (0..dest.size[0]) |i| {
+            dest.idx(.{ i, k }).* = 0;
+            for (0..a.size[0]) |l| {
+                dest.idx(.{ i, k }).* += a.idx(.{ l, k }).* * b.idx(.{ i, l }).*;
+            }
+        }
     }
 }
 
-test "Grid(3, f32).dupe" {
-    var grid = try Grid(2, f32).dupe(std.testing.allocator, ConstGrid(2, f32){
-        .data = &[_]f32{
-            2, 3,
-            4, 5,
-        },
-        .size = .{ 2, 2 },
-        .stride = .{2},
-    });
-    defer grid.free(std.testing.allocator);
+test matrixMul {
+    // Multiplying a 3x2 matrix by a 2x3 matrix:
+    //            [ 1  2]
+    //            [ 3  4]
+    //            [ 5  6]
+    //            -------
+    // [-2 5 6] | [43 52]
+    // [ 5 2 7] | [46 60]
+    const c = try alloc(2, f32, std.testing.allocator, .{ 2, 2 });
+    defer std.testing.allocator.free(c.slice());
 
-    try std.testing.expectEqualSlices(
-        f32,
-        &.{ 2, 3, 4, 5 },
-        grid.getSliceOfData(),
-    );
-}
-
-test "Grid(2, f32).matrixMul" {
-    const a = ConstGrid(2, f32){
+    matrixMul(f32, c.asSlice(), .{
         .data = &[_]f32{
-            1, 4,
-            2, 5,
-            3, 6,
+            -2, 5, 6,
+            5,  2, 7,
         },
-        .size = .{ 2, 3 },
-        .stride = .{2},
-    };
-    const b = ConstGrid(2, f32){
-        .data = &[_]f32{
-            7, 9,  11,
-            8, 10, 12,
-        },
+        .stride = .{ 1, 3 },
         .size = .{ 3, 2 },
-        .stride = .{3},
-    };
-
-    var c = try Grid(2, f32).alloc(std.testing.allocator, .{ 2, 2 });
-    defer c.free(std.testing.allocator);
-
-    c.matrixMul(a, b);
+    }, .{
+        .data = &[_]f32{
+            1, 2,
+            3, 4,
+            5, 6,
+        },
+        .stride = .{ 1, 2 },
+        .size = .{ 2, 3 },
+    });
 
     try std.testing.expectEqualSlices(f32, &[_]f32{
-        58, 139,
-        64, 154,
+        43, 52,
+        46, 60,
     }, c.data[0..4]);
 }
+
+pub fn RangeIterator(comptime D: usize) type {
+    return struct {
+        pos: [D]usize,
+        size: [D]usize,
+
+        pub fn next(this: *@This()) ?[D]usize {
+            for (this.pos[0 .. D - 1], this.pos[1..D], this.size[0 .. D - 1]) |*axis, *next_axis, size| {
+                if (axis.* >= size) {
+                    axis.* = 0;
+                    next_axis.* += 1;
+                }
+            }
+            if (this.pos[D - 1] >= this.size[D - 1]) {
+                return null;
+            }
+            defer this.pos[0] += 1;
+            return this.pos;
+        }
+    };
+}
+
+pub fn iterateRange(comptime D: usize, size: [D]usize) RangeIterator(D) {
+    return RangeIterator(D){
+        .pos = [_]usize{0} ** D,
+        .size = size,
+    };
+}
+
+const std = @import("std");
