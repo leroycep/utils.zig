@@ -306,7 +306,7 @@ test add {
     var result = try alloc(2, f32, std.testing.allocator, .{ 3, 2 });
     defer std.testing.allocator.free(result.slice());
 
-    add(2, f32, result, .{
+    add(2, f32, result.asSlice(), .{
         .data = &[_]f32{
             1, 2, 3,
             4, 5, 6,
@@ -370,36 +370,6 @@ pub fn mul(comptime D: usize, comptime T: type, dest: Slice(D, T), a: ConstSlice
     while (iter.next()) |pos| {
         dest.idx(pos).* = a.idx(pos).* * b.idx(pos).*;
     }
-}
-
-test add {
-    var result = try alloc(2, f32, std.testing.allocator, .{ 3, 2 });
-    defer std.testing.allocator.free(result.slice());
-
-    add(2, f32, result.asSlice(), .{
-        .data = &[_]f32{
-            1, 2, 3,
-            4, 5, 6,
-        },
-        .size = .{ 3, 2 },
-        .stride = .{ 1, 3 },
-    }, .{
-        .data = &[_]f32{
-            1, 1, 2,
-            3, 5, 8,
-        },
-        .size = .{ 3, 2 },
-        .stride = .{ 1, 3 },
-    });
-
-    try std.testing.expectEqualSlices(
-        f32,
-        &.{
-            2, 3,  5,
-            7, 10, 14,
-        },
-        result.data[0..6],
-    );
 }
 
 test mul {
