@@ -43,7 +43,7 @@ pub fn BufferAligned(comptime D: usize, comptime A: usize, comptime T: type) typ
 
         pub fn asConstSlice(this: @This()) ConstSliceAligned(D, A, T) {
             var strides: [D]usize = undefined;
-            var len: usize = A;
+            var len: usize = 1;
             for (&strides, this.size) |*stride, size| {
                 stride.* = len;
                 len *= size;
