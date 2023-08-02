@@ -23,7 +23,7 @@ test magnitude {
 }
 
 pub fn normalize(comptime D: usize, comptime T: type, vector: @Vector(D, T)) @Vector(D, T) {
-    return vector / @splat(D, magnitude(D, T, vector));
+    return vector / @as(@Vector(D, T), @splat(magnitude(D, T, vector)));
 }
 
 test normalize {
