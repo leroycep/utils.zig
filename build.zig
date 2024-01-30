@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
     // Standard release options allow the person running `zig build` to select
@@ -10,7 +10,7 @@ pub fn build(b: *std.build.Builder) void {
     const install_benchmarks = b.option(bool, "install-benchmarks", "Install the benchmark binaries") orelse false;
 
     const module = b.addModule("utils.zig", .{
-        .source_file = .{ .path = "utils.zig" },
+        .root_source_file = .{ .path = "utils.zig" },
     });
 
     const main_tests = b.addTest(.{
@@ -29,7 +29,7 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    benchmark_grid_add.addModule("utils", module);
+    benchmark_grid_add.root_module.addImport("utils", module);
     if (install_benchmarks) {
         b.installArtifact(benchmark_grid_add);
     }
@@ -40,7 +40,7 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    benchmark_grid_div.addModule("utils", module);
+    benchmark_grid_div.root_module.addImport("utils", module);
     if (install_benchmarks) {
         b.installArtifact(benchmark_grid_div);
     }

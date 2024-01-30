@@ -132,8 +132,8 @@ pub fn ArrayDeque(comptime T: type) type {
                 const end = old_buffer.len;
 
                 self.buffer = try self.alloc.alloc(T, better_capacity);
-                std.mem.copy(T, self.buffer[0 .. end - tail], old_buffer[tail..end]);
-                std.mem.copy(T, self.buffer[end - tail ..], old_buffer[0..head]);
+                @memcpy(self.buffer[0 .. end - tail], old_buffer[tail..end]);
+                @memcpy(self.buffer[end - tail ..][0..head], old_buffer[0..head]);
                 self.head = head + end - tail;
                 self.tail = 0;
             } else {
